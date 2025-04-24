@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+env/
+venv/
+*.egg-info/
+
+# Data
+data/
+models/
+history.json
+
+# IDEs
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
