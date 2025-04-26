@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers, callbacks
+from sklearn.utils.class_weight import compute_class_weight
 
 
 def load_data(processed_dir):
@@ -75,6 +76,11 @@ def main():
     input_shape = X_train.shape[1:]
     num_classes = len(np.unique(y_train))
 
+    # Calculate class weights to address class imbalance
+    classes = np.unique(y_train)
+    class_weights_values = compute_class_weight('balanced', classes=classes, y=y_train)
+    class_weights = dict(zip(classes, class_weights_values))
+
     # Build and compile model
     model = build_model(input_shape, num_classes)
     optimizer = optimizers.Adam(learning_rate=args.learning_rate)
@@ -94,13 +100,18 @@ def main():
     )
     tensorboard_cb = callbacks.TensorBoard(log_dir=args.log_dir)
 
+    # Learning rate scheduler and early stopping
+    reduce_lr_cb = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1)
+    early_stop_cb = callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1)
+
     # Train
     model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
         epochs=args.epochs,
         batch_size=args.batch_size,
-        callbacks=[checkpoint_cb, tensorboard_cb]
+        callbacks=[checkpoint_cb, tensorboard_cb, reduce_lr_cb, early_stop_cb],
+        class_weight=class_weights
     )
 
     # Save final model
