@@ -23,9 +23,16 @@ def load_data(processed_dir):
 
 
 def build_model(input_shape, num_classes=7):
-    """Build a simple CNN model for emotion recognition."""
+    """Build a simple CNN model for emotion recognition with data augmentation."""
+    # Data augmentation pipeline
+    data_augmentation = models.Sequential([
+        layers.RandomFlip("horizontal"),
+        layers.RandomRotation(0.1),
+        layers.RandomContrast(0.1),
+    ])
     model = models.Sequential([
         layers.Input(shape=input_shape),
+        data_augmentation,
         layers.Conv2D(32, 3, activation="relu"),
         layers.BatchNormalization(),
         layers.MaxPooling2D(),
