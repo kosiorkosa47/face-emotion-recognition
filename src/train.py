@@ -28,8 +28,8 @@ def build_model(input_shape, num_classes=7):
     # Data augmentation pipeline
     data_augmentation = models.Sequential([
         layers.RandomFlip("horizontal"),
-        layers.RandomRotation(0.1),
-        layers.RandomContrast(0.1),
+        layers.RandomRotation(0.05),
+        layers.RandomContrast(0.05),
     ])
     model = models.Sequential([
         layers.Input(shape=input_shape),
