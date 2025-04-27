@@ -73,6 +73,27 @@ def main():
 
     # Load data
     (X_train, y_train), (X_val, y_val) = load_data(args.processed_dir)
+
+    # Oversample minority classes to balance training set
+    classes, counts = np.unique(y_train, return_counts=True)
+    max_count = counts.max()
+    X_resampled, y_resampled = [], []
+    for cls, count in zip(classes, counts):
+        idx = np.where(y_train == cls)[0]
+        X_resampled.append(X_train[idx])
+        y_resampled.append(y_train[idx])
+        num_extra = max_count - count
+        if num_extra > 0:
+            extra_idx = np.random.choice(idx, size=num_extra, replace=True)
+            X_resampled.append(X_train[extra_idx])
+            y_resampled.append(y_train[extra_idx])
+    # Concatenate and shuffle
+    X_train = np.concatenate(X_resampled, axis=0)
+    y_train = np.concatenate(y_resampled, axis=0)
+    perm = np.random.permutation(len(y_train))
+    X_train = X_train[perm]
+    y_train = y_train[perm]
+
     input_shape = X_train.shape[1:]
     num_classes = len(np.unique(y_train))
 
