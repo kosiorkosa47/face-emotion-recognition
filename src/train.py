@@ -54,8 +54,8 @@ def build_model(input_shape, num_classes=7):
 
 def build_transfer_model(input_shape, num_classes=7):
     """Build a transfer learning model using MobileNetV2 as feature extractor."""
-    # Load pre-trained MobileNetV2 without top layers
-    base_model = MobileNetV2(input_shape=(96,96,3), include_top=False, weights='imagenet')
+    # Create MobileNetV2 feature extractor
+    base_model = MobileNetV2(input_shape=(96,96,3), include_top=False, weights='imagenet', name='mobilenetv2_base')
     base_model.trainable = False
     inputs = layers.Input(shape=input_shape)
     # Resize to MobileNet input and convert grayscale to RGB
@@ -87,6 +87,12 @@ def parse_args():
                         help="TensorBoard log directory")
     parser.add_argument("--transfer", action="store_true",
                         help="Use transfer learning with MobileNetV2")
+    parser.add_argument("--fine_tune", action="store_true",
+                        help="Fine-tune the MobileNetV2 backbone after initial training")
+    parser.add_argument("--fine_tune_epochs", type=int, default=10,
+                        help="Number of epochs for fine-tuning")
+    parser.add_argument("--fine_tune_lr", type=float, default=1e-5,
+                        help="Learning rate for fine-tuning")
     return parser.parse_args()
 
 
@@ -160,6 +166,29 @@ def main():
         callbacks=[checkpoint_cb, tensorboard_cb, reduce_lr_cb, early_stop_cb],
         class_weight=class_weights
     )
+
+    # Fine-tuning: unfreeze backbone if requested
+    if args.transfer and args.fine_tune:
+        # Unfreeze MobileNetV2 base
+        base_model = model.get_layer('mobilenetv2_base')
+        base_model.trainable = True
+        # Recompile with lower learning rate
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=args.fine_tune_lr),
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"]
+        )
+        print("Starting fine-tuning of MobileNetV2 backbone...")
+        model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val),
+            epochs=args.fine_tune_epochs,
+            batch_size=args.batch_size,
+            callbacks=[checkpoint_cb, tensorboard_cb, reduce_lr_cb, early_stop_cb],
+            class_weight=class_weights
+        )
+        model.save(args.model_path)
+        print(f"Fine-tuning completed. Model saved to {args.model_path}")
 
     # Save final model
     model.save(args.model_path)
