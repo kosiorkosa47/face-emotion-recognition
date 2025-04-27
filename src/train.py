@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers, callbacks
+from tensorflow.keras.applications import MobileNetV2
 from sklearn.utils.class_weight import compute_class_weight
 
 
@@ -51,6 +52,24 @@ def build_model(input_shape, num_classes=7):
     return model
 
 
+def build_transfer_model(input_shape, num_classes=7):
+    """Build a transfer learning model using MobileNetV2 as feature extractor."""
+    # Load pre-trained MobileNetV2 without top layers
+    base_model = MobileNetV2(input_shape=(96,96,3), include_top=False, weights='imagenet')
+    base_model.trainable = False
+    inputs = layers.Input(shape=input_shape)
+    # Resize to MobileNet input and convert grayscale to RGB
+    x = layers.Resizing(96,96)(inputs)
+    x = layers.Lambda(lambda x: tf.image.grayscale_to_rgb(x))(x)
+    # Feature extraction
+    x = base_model(x, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(num_classes, activation='softmax')(x)
+    return tf.keras.Model(inputs, outputs)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train emotion recognition CNN")
     parser.add_argument("--processed_dir", type=str, default="data/processed",
@@ -65,6 +84,8 @@ def parse_args():
                         help="Path to save the best model")
     parser.add_argument("--log_dir", type=str, default="logs",
                         help="TensorBoard log directory")
+    parser.add_argument("--transfer", action="store_true",
+                        help="Use transfer learning with MobileNetV2")
     return parser.parse_args()
 
 
@@ -102,8 +123,12 @@ def main():
     class_weights_values = compute_class_weight('balanced', classes=classes, y=y_train)
     class_weights = dict(zip(classes, class_weights_values))
 
-    # Build and compile model
-    model = build_model(input_shape, num_classes)
+    # Build model: transfer learning or from-scratch CNN
+    if args.transfer:
+        model = build_transfer_model(input_shape, num_classes)
+    else:
+        model = build_model(input_shape, num_classes)
+
     optimizer = optimizers.Adam(learning_rate=args.learning_rate)
     model.compile(optimizer=optimizer,
                   loss="sparse_categorical_crossentropy",
