@@ -60,7 +60,8 @@ def build_transfer_model(input_shape, num_classes=7):
     inputs = layers.Input(shape=input_shape)
     # Resize to MobileNet input and convert grayscale to RGB
     x = layers.Resizing(96,96)(inputs)
-    x = layers.Lambda(lambda x: tf.image.grayscale_to_rgb(x))(x)
+    # Convert grayscale to RGB by duplicating channels
+    x = layers.Concatenate()([x, x, x])
     # Feature extraction
     x = base_model(x, training=False)
     x = layers.GlobalAveragePooling2D()(x)
