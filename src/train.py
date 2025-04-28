@@ -135,9 +135,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    # Map legacy --transfer flag to backbone
-    if args.transfer and args.backbone == "cnn":
-        args.backbone = "mobilenetv2"
 
     # Load data
     (X_train, y_train), (X_val, y_val) = load_data(args.processed_dir)
