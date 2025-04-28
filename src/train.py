@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers, callbacks
-from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications import MobileNetV2, EfficientNetB0
 from sklearn.utils.class_weight import compute_class_weight
 
 
@@ -26,11 +26,13 @@ def load_data(processed_dir):
 
 def build_model(input_shape, num_classes=7):
     """Build a simple CNN model for emotion recognition with data augmentation."""
-    # Data augmentation pipeline
+    # Stronger data augmentation for better generalization
     data_augmentation = models.Sequential([
         layers.RandomFlip("horizontal"),
-        layers.RandomRotation(0.05),
-        layers.RandomContrast(0.05),
+        layers.RandomRotation(0.1),
+        layers.RandomZoom(0.1),
+        layers.RandomTranslation(0.1, 0.1),
+        layers.RandomContrast(0.1),
     ])
     model = models.Sequential([
         layers.Input(shape=input_shape),
@@ -52,14 +54,14 @@ def build_model(input_shape, num_classes=7):
     return model
 
 
-def build_transfer_model(input_shape, num_classes=7):
+def build_transfer_model(input_shape, num_classes=7, resolution=96):
     """Build a transfer learning model using MobileNetV2 as feature extractor."""
     # Create MobileNetV2 feature extractor
-    base_model = MobileNetV2(input_shape=(96,96,3), include_top=False, weights='imagenet', name='mobilenetv2_base')
+    base_model = MobileNetV2(input_shape=(resolution,resolution,3), include_top=False, weights='imagenet', name='mobilenetv2_base')
     base_model.trainable = False
     inputs = layers.Input(shape=input_shape)
     # Resize to MobileNet input and convert grayscale to RGB
-    x = layers.Resizing(96,96)(inputs)
+    x = layers.Resizing(resolution,resolution)(inputs)
     # Convert grayscale to RGB by duplicating channels
     x = layers.Concatenate()([x, x, x])
     # Feature extraction
@@ -69,6 +71,33 @@ def build_transfer_model(input_shape, num_classes=7):
     x = layers.Dropout(0.5)(x)
     outputs = layers.Dense(num_classes, activation='softmax')(x)
     return tf.keras.Model(inputs, outputs)
+
+
+def build_efficientnet_model(input_shape, num_classes=7, resolution=96):
+    """Build a transfer learning model using EfficientNetB0 as feature extractor."""
+    base_model = EfficientNetB0(input_shape=(resolution,resolution,3), include_top=False, weights='imagenet', name='efficientnetb0_base')
+    base_model.trainable = False
+    inputs = layers.Input(shape=input_shape)
+    x = layers.Resizing(resolution,resolution)(inputs)
+    x = layers.Concatenate()([x, x, x])
+    x = base_model(x, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(num_classes, activation='softmax')(x)
+    return tf.keras.Model(inputs, outputs)
+
+
+def sparse_categorical_focal_loss(gamma=2.0, alpha=0.25):
+    def loss_fn(y_true, y_pred):
+        y_true = tf.cast(y_true, tf.int32)
+        y_pred = tf.clip_by_value(y_pred, tf.keras.backend.epsilon(), 1.0 - tf.keras.backend.epsilon())
+        y_true_one_hot = tf.one_hot(y_true, depth=tf.shape(y_pred)[-1])
+        ce = -tf.math.log(y_pred) * y_true_one_hot
+        weight = alpha * tf.pow(1 - y_pred, gamma)
+        loss = weight * ce
+        return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
+    return loss_fn
 
 
 def parse_args():
@@ -85,19 +114,30 @@ def parse_args():
                         help="Path to save the best model")
     parser.add_argument("--log_dir", type=str, default="logs",
                         help="TensorBoard log directory")
-    parser.add_argument("--transfer", action="store_true",
-                        help="Use transfer learning with MobileNetV2")
+    parser.add_argument("--backbone", choices=["cnn","mobilenetv2","efficientnet"], default="cnn",
+                        help="Model backbone: cnn, mobilenetv2, or efficientnetb0")
+    parser.add_argument("--resolution", type=int, default=96,
+                        help="Input resolution for backbone models")
+    parser.add_argument("--use_focal_loss", action="store_true",
+                        help="Use focal loss instead of cross-entropy")
+    parser.add_argument("--label_smoothing", type=float, default=0.0,
+                        help="Label smoothing factor for cross-entropy loss")
     parser.add_argument("--fine_tune", action="store_true",
-                        help="Fine-tune the MobileNetV2 backbone after initial training")
+                        help="Fine-tune the backbone after initial training")
     parser.add_argument("--fine_tune_epochs", type=int, default=10,
                         help="Number of epochs for fine-tuning")
     parser.add_argument("--fine_tune_lr", type=float, default=1e-5,
                         help="Learning rate for fine-tuning")
+    parser.add_argument("--use_cosine_lr", action="store_true",
+                        help="Use cosine decay learning rate schedule")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    # Map legacy --transfer flag to backbone
+    if args.transfer and args.backbone == "cnn":
+        args.backbone = "mobilenetv2"
 
     # Load data
     (X_train, y_train), (X_val, y_val) = load_data(args.processed_dir)
@@ -130,16 +170,39 @@ def main():
     class_weights_values = compute_class_weight('balanced', classes=classes, y=y_train)
     class_weights = dict(zip(classes, class_weights_values))
 
-    # Build model: transfer learning or from-scratch CNN
-    if args.transfer:
-        model = build_transfer_model(input_shape, num_classes)
-    else:
+    # Build model based on backbone choice
+    if args.backbone == "cnn":
         model = build_model(input_shape, num_classes)
+    elif args.backbone == "mobilenetv2":
+        model = build_transfer_model(input_shape, num_classes, resolution=args.resolution)
+    elif args.backbone == "efficientnet":
+        model = build_efficientnet_model(input_shape, num_classes, resolution=args.resolution)
+    else:
+        raise ValueError(f"Unknown backbone: {args.backbone}")
 
-    optimizer = optimizers.Adam(learning_rate=args.learning_rate)
-    model.compile(optimizer=optimizer,
-                  loss="sparse_categorical_crossentropy",
-                  metrics=["accuracy"])
+    # Optimizer with optional cosine decay schedule
+    if args.use_cosine_lr:
+        total_steps = args.epochs
+        lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=args.learning_rate,
+            decay_steps=total_steps
+        )
+        optimizer = optimizers.Adam(learning_rate=lr_schedule)
+    else:
+        optimizer = optimizers.Adam(learning_rate=args.learning_rate)
+
+    # Configure loss
+    if args.use_focal_loss:
+        loss_fn = sparse_categorical_focal_loss()
+    elif args.label_smoothing > 0:
+        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(label_smoothing=args.label_smoothing)
+    else:
+        loss_fn = "sparse_categorical_crossentropy"
+    model.compile(
+        optimizer=optimizer,
+        loss=loss_fn,
+        metrics=["accuracy"]
+    )
 
     # Prepare directories
     os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
@@ -168,17 +231,18 @@ def main():
     )
 
     # Fine-tuning: unfreeze backbone if requested
-    if args.transfer and args.fine_tune:
-        # Unfreeze MobileNetV2 base
-        base_model = model.get_layer('mobilenetv2_base')
+    if args.backbone != "cnn" and args.fine_tune:
+        # Unfreeze backbone for fine-tuning
+        layer_name = 'mobilenetv2_base' if args.backbone == 'mobilenetv2' else 'efficientnetb0_base'
+        base_model = model.get_layer(layer_name)
         base_model.trainable = True
         # Recompile with lower learning rate
         model.compile(
             optimizer=optimizers.Adam(learning_rate=args.fine_tune_lr),
-            loss="sparse_categorical_crossentropy",
+            loss=loss_fn,
             metrics=["accuracy"]
         )
-        print("Starting fine-tuning of MobileNetV2 backbone...")
+        print("Starting fine-tuning of backbone...")
         model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
