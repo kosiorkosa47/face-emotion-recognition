@@ -38,14 +38,20 @@ Face emotion detection and recognition project using:
 
 ## Dataset
 
-- Download the [FER-2013 dataset](https://www.kaggle.com/datasets/msambare/fer2013) and place `fer2013.csv` in the `data/` directory.
-- Preprocess the dataset:
-    ```bash
-    python src/utils.py \
-      --input_csv data/fer2013.csv \
-      --output_dir data/processed
-    ```
+- Download and extract the [FER-2013 dataset](https://www.kaggle.com/datasets/msambare/fer2013) so that images are organized in subfolders by emotion, for example:
+  ```
+  data/fer2013/train/happy/xxx.png
+  data/fer2013/train/sad/yyy.png
+  ...
+  ```
+- Preprocess the dataset into numpy arrays:
+  ```bash
+  python utils.py --data_dir data/fer2013 --output_dir data/processed
+  ```
 This generates `.npy` files in `data/processed` for training and evaluation.
+
+> **Note:** If you only have the CSV version of FER-2013, you must first convert it to images organized by class folders. You can use a notebook or script such as [this example](https://www.kaggle.com/code/debarshichanda/fer2013-csv-to-images) to perform the conversion.
+
 
 ## Usage
 
@@ -92,6 +98,9 @@ with torch.no_grad():
     pred = output.argmax(1).item()
 print(f'Predicted class: {pred}')
 ```
+
+> **Note:** All training, evaluation, and inference scripts are now PyTorch-based and located in the main project folder. Scripts in the `src/` directory and any TensorFlow/Keras code are deprecated and not used in the current workflow.
+
 
 ### 2. Evaluate the model
 
