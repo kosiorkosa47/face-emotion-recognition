@@ -35,21 +35,48 @@ Face emotion detection and recognition project using:
 
 ## Dataset
 
-This project uses the [FER-2013 dataset](https://www.kaggle.com/datasets/msambare/fer2013). Place the downloaded `fer2013.csv` file in the `data/` directory.
+- Download the [FER-2013 dataset](https://www.kaggle.com/datasets/msambare/fer2013) and place `fer2013.csv` in the `data/` directory.
+- Preprocess the dataset:
+    ```bash
+    python src/utils.py \
+      --input_csv data/fer2013.csv \
+      --output_dir data/processed
+    ```
+This generates `.npy` files in `data/processed` for training and evaluation.
 
 ## Usage
 
 ### 1. Train the model
 
+Use `train.py` with configurable backbones and advanced options:
 ```bash
-python train.py \
-  --data_path data/fer2013.csv \
-  --epochs 50 \
+python src/train.py \
+  --processed_dir data/processed \
+  --backbone mobilenetv2 \
+  --resolution 96 \
+  --use_focal_loss \
+  --label_smoothing 0.1 \
+  --use_cosine_lr \
+  --fine_tune \
+  --epochs 30 \
   --batch_size 64 \
-  --model_path models/emotion_model.h5
+  --learning_rate 1e-3 \
+  --fine_tune_epochs 10 \
+  --fine_tune_lr 1e-5 \
+  --model_path models/emotion_model.h5 \
+  --log_dir logs
 ```
 
-### 2. Run real-time detection
+### 2. Evaluate the model
+
+```bash
+python src/evaluate.py \
+  --processed_dir data/processed \
+  --model_path models/emotion_model.h5 \
+  --output_dir evaluation
+```
+
+### 3. Run real-time detection
 
 ```bash
 python detect.py \
@@ -62,12 +89,17 @@ The webcam window will open and display detected faces with predicted emotions.
 
 ```
 face-emotion-recognition/
-├── data/                   # Dataset directory
-│   └── fer2013.csv         # FER-2013 CSV file
-├── models/                 # Saved model weights
-├── train.py                # Script to train CNN model
-├── detect.py               # Real-time detection script
-├── requirements.txt        # Python dependencies
+├── data/
+│   ├── fer2013.csv
+│   └── processed/              # Preprocessed .npy files
+├── src/
+│   ├── train.py                # Training script with advanced options
+│   ├── evaluate.py             # Evaluation script for test set
+│   ├── utils.py                # Data loading and preprocessing utilities
+│   └── detect.py               # Real-time detection script
+├── models/                     # Saved model weights
+├── evaluation/                 # Generated evaluation reports and plots
+├── requirements.txt
 ├── LICENSE
 └── README.md
 ```
