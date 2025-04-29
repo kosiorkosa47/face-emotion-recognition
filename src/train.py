@@ -75,7 +75,13 @@ def build_transfer_model(input_shape, num_classes=7, resolution=96):
 
 def build_efficientnet_model(input_shape, num_classes=7, resolution=96):
     """Build a transfer learning model using EfficientNetB0 as feature extractor."""
-    base_model = EfficientNetB0(input_shape=(resolution,resolution,3), include_top=False, weights='imagenet', name='efficientnetb0_base')
+    # Attempt to load pre-trained weights, fallback if download fails
+    try:
+        base_model = EfficientNetB0(input_shape=(resolution,resolution,3), include_top=False, weights='imagenet', name='efficientnetb0_base')
+    except Exception as e:
+        print(f"WARNING: Could not load EfficientNetB0 pre-trained weights: {e}")
+        print("Falling back to random initialization (weights=None). Please ensure internet or provide local weights for best performance.")
+        base_model = EfficientNetB0(input_shape=(resolution,resolution,3), include_top=False, weights=None, name='efficientnetb0_base')
     base_model.trainable = False
     inputs = layers.Input(shape=input_shape)
     x = layers.Resizing(resolution,resolution)(inputs)
