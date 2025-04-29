@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers, callbacks
+from tensorflow.keras import mixed_precision
 from tensorflow.keras.applications import MobileNetV2, EfficientNetB0
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -140,10 +141,27 @@ def parse_args():
 
 
 def main():
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        for gpu in physical_devices:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"GPUs detected: {len(physical_devices)}. Using GPU for training.")
+    else:
+        print("No GPUs detected. Training on CPU.")
+
+    # Enable mixed precision for speedup on GPU
+    mixed_precision.set_global_policy('mixed_float16')
+
     args = parse_args()
 
     # Load data
     (X_train, y_train), (X_val, y_val) = load_data(args.processed_dir)
+
+    # Prepare tf.data pipelines for faster GPU training
+    train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+    train_ds = train_ds.shuffle(len(y_train)).batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
+    val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val))
+    val_ds = val_ds.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
     # Oversample minority classes to balance training set
     classes, counts = np.unique(y_train, return_counts=True)
@@ -225,8 +243,8 @@ def main():
 
     # Train
     model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
+        train_ds,
+        validation_data=val_ds,
         epochs=args.epochs,
         batch_size=args.batch_size,
         callbacks=[checkpoint_cb, tensorboard_cb, reduce_lr_cb, early_stop_cb],
@@ -247,8 +265,8 @@ def main():
         )
         print("Starting fine-tuning of backbone...")
         model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
+            train_ds,
+            validation_data=val_ds,
             epochs=args.fine_tune_epochs,
             batch_size=args.batch_size,
             callbacks=[checkpoint_cb, tensorboard_cb, reduce_lr_cb, early_stop_cb],
