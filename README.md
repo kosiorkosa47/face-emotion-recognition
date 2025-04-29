@@ -50,7 +50,7 @@ Face emotion detection and recognition project using:
   ```
 This generates `.npy` files in `data/processed` for training and evaluation.
 
-> **Note:** If you only have the CSV version of FER-2013, you must first convert it to images organized by class folders. You can use a notebook or script such as [this example](https://www.kaggle.com/code/debarshichanda/fer2013-csv-to-images) to perform the conversion.
+> **Note:** If you only have the CSV version of FER-2013, you must first convert it to images organized by class folders. You can use, for example, [this Python script](https://github.com/Teamten47/Facial-Emotion-Image-Recognition/blob/main/convert_fer2013_to_images_and_landmarks.py) to perform the conversion.
 
 
 ## Usage
